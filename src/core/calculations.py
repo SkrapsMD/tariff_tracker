@@ -14,50 +14,6 @@ import country_converter as coco
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 os.chdir(ROOT_DIR)
 sys.path.append(str(ROOT_DIR))
-
-ii_data = pd.read_csv('data/working/import_intensity.csv')
-ii_data['tariff_rate'] = ii_data['tariff_rate'].astype(float)
-ii_data['tariff_rate']= ii_data['tariff_rate']/100
-ii_data['trade_openness_wt_expShare'] = ii_data['country_import_weight'] * ii_data['import_intensity_weighted']
-
-exp_data = pd.read_stata('data/raw/numerator_panjiva_match_firm_dept_yr.dta')
-exp_data = exp_data.rename(columns={'sector_CEX': 'sector'})
-
-max_year = exp_data['year'].max()
-exp_data= exp_data[exp_data['year'] == max_year]
-
-# Generate sales weight denominator
-exp_data['total_sales'] = exp_data.groupby(['year','department_description'])['item_total_st_wt'].transform('sum')
-exp_data['ExpendShareYInNumerator'] = exp_data['item_total_st_wt'] / exp_data['total_sales']
-# Collapse exp_data to the department_description year level
-collapsed_exp_data = exp_data.groupby(['year', 'department_description']).agg(
-    total_sales=('total_sales', 'mean'),
-    sector=('sector', 'first')
-).reset_index()
-
-merged_data = pd.merge(collapsed_exp_data, ii_data, on='sector', how='left')
-
-# Calculate the openness weighted with expenditure shares for each country: 
-
-merged_data['tottotsales'] = merged_data.groupby(['year', 'country'])['total_sales'].transform('sum')
-merged_data['dept_share'] = merged_data['total_sales'] / merged_data['tottotsales']
-
-merged_data['trade_openness_wt_expShare_wt'] =  merged_data['trade_openness_wt_expShare'] * merged_data['dept_share']
-
-# Collapse down by year country summing up the trade_openness. 
-merged_data = merged_data.groupby(['year', 'country']).agg(
-    trade_openness_wt_expShare=('trade_openness_wt_expShare_wt', 'sum'),
-    weight_check = ('dept_share', 'sum'),
-    tariff = ('tariff_rate', 'mean')
-).reset_index()
-
-# Clean Gaza and WEst bank 
-merged_data['country'] = merged_data['country'].replace(
-    {'west bank administered by israel': 'palestine', 'gaza strip administered by israel': 'palestine'}
-)
-
-merged_data['ISO_A3'] = coco.convert(names=merged_data['country'], to='ISO3')
-
 def calculate_price_effects(data, new_tariffs, pass_through):
     """
     Calculate the estimated price effects from tariff changes using country‐specific
@@ -110,4 +66,4 @@ def calculate_price_effects(data, new_tariffs, pass_through):
     result_df.rename(columns={'D_price': 'price_effect'}, inplace=True)
     
     # Return only the relevant columns
-    return result_df[['ISO_A3', 'price_effect', 'new_tariff', 'tariff']]
+    return result_df[['ISO_A3', 'price_effect']]

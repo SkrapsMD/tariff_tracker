@@ -6,8 +6,8 @@
     <!-- Leaflet CSS -->
     <link
       rel="stylesheet"
-      href="https://unpkg.com/leaflet/dist/leaflet.css"
-      integrity="sha256-sA+e6VPn8j7Z4KJS2SXChv5PC+ZB6GJcrvBZFTPtg6k="
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
     <style>
@@ -30,8 +30,8 @@
 
     <!-- Leaflet JS -->
     <script
-      src="https://unpkg.com/leaflet/dist/leaflet.js"
-      integrity="sha256-nPLV+ZNJpOdaHSyk1y69RJAWhEvlDxUBHizqBAqLrF4="
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
 
@@ -48,7 +48,7 @@
 
       // 3) Fetch a GeoJSON file of world countries
       //    For a quick start, you can use one from GitHub or store your own in "world_countries.geojson".
-      fetch("world_countries.geojson")
+      fetch("data/countries.geojson")
         .then((res) => res.json())
         .then((geojsonData) => {
           geojsonData.features.forEach((feature) => {
@@ -66,7 +66,7 @@
                 const countryName = feature.properties.ADMIN;
 
                 // Prompt the user for a new tariff rate
-                const newTariffStr = prompt(`Enter new tariff for ${isoCode}:`, "0.1");
+                const newTariffStr = prompt(`Enter new tariff for ${countryName}:`, "0.1");
                 if (newTariffStr === null) {
                   // User clicked cancel
                   return;
@@ -83,7 +83,7 @@
                 //    This assumes your endpoint expects:
                 //       { new_tariffs: { [countryName]: <float> }, pass_through: <float> }
                 const requestData = {
-                  new_tariffs: { [countryName]: newTariffValue },
+                  new_tariffs: { [isoCode]: newTariffValue },
                   pass_through: 1.0,
                 };
 
@@ -100,10 +100,10 @@
                   .then((data) => {
                     // data should have a "results" array like [{ country: "...", price_effect: ... }, ...]
                     console.log("Server response:", data);
-                    if (data.results && data.results.length) {
-                      const priceEffect = data.results[0].price_effect.toFixed(2);
+                    if (data.result && data.result.length) {
+                      const priceEffect = data.result[0].price_effect.toFixed(2);
                       alert(
-                        `Price effect for ${countryName}: ${priceEffect}%`
+                        `Price effect for ${isoCode}: ${priceEffect}%`
                       );
                     } else {
                       alert("No price effect data returned.");
