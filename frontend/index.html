@@ -4,12 +4,9 @@
     <meta charset="utf-8" />
     <title>Tariff Map</title>
     <!-- Leaflet CSS -->
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-      crossorigin=""
-    />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+     <link rel="stylesheet" href="./style.css" />
     <style>
       /* Make the map fill the browser window */
       html,
@@ -17,110 +14,336 @@
         margin: 0;
         padding: 0;
         height: 100%;
+        background-color: #2b2b2b;
+        color: #f2f2f2;
+        font-family: "Courier New", Courier, monospace;
       }
-      #map {
-        width: 100%;
+      #container {
+        display: flex;
         height: 100%;
+      }
+      /* Map area */
+      #map {
+        flex: 2; /* 2 parts map, 1 part receipt */
+        margin: 10px;
+        border: 2px solid #444;
+        border-radius: 5px;
+      }
+      /* Receipt panel */
+      #receipt-panel {
+        flex: 1; /* 1 part */
+        margin: 10px;
+        padding: 10px;
+        border: 2px solid #444;
+        font-family: "Courier New", monospace;
+        border-radius: 5px;
+        background-color: #1c1c1c; /* still dark, but different shade */
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      /* Title area for the receipt */
+      #receipt-title {
+        text-align: center;
+        font-size: 1.2em;
+        margin-bottom: 5px;
+      }
+      /* Container for line items */
+      #receipt-items {
+        flex: 1; /* take all remaining space */
+        overflow-y: auto; /* scroll if too long */
+        display: block;
+        margin-bottom: 10px;
+      }
+      /* Single line item styling */
+      .receipt-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+      }
+      /* Footer / total area */
+      #receipt-footer {
+        border-top: 1px dashed #fff;
+        padding-top: 5px;
+      }
+      #clear-btn {
+        margin-top: 10px;
+        background-color: #444;
+        color: #fff;
+        border: 1px solid #666;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      #clear-btn:hover {
+        background-color: #555;
       }
     </style>
   </head>
   <body>
-    <!-- Map container -->
-    <div id="map"></div>
+    <div id="container">
+      <!-- Map container -->
+      <div id="map"></div>
 
+      <!-- Receipt panel -->
+      <div id="receipt-panel">
+        <div>
+          <div id="receipt-title">TARIFF RECEIPT</div>
+          <div id="receipt-items">
+            <!-- line items inserted here by JS -->
+          </div>
+        </div>
+        <div id="receipt-footer">
+          <div id="total-label">Total Price Effect: <span id="total-effect">0.00</span>%</div>
+          <button id="clear-btn">Clear History</button>
+        </div>
+      </div>
+    </div>
+    
     <!-- Leaflet JS -->
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
-    ></script>
+    ></script>      
 
     <script>
-      // 1) Initialize the map
-      const map = L.map("map").setView([20, 0], 2); // roughly center on the globe
-
-      // 2) Add a tile layer (OpenStreetMap for simplicity, or you could use a dark tile service)
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      /*****************************************************
+       * 1) GLOBAL STATE
+       *****************************************************/
+      let selectedTariffs = {};  // isoCode -> tariff rate chosen by user
+      let oldTariffs = {};      // isoCode -> current tariff rate
+      let priceEffects = [];     // array of { country, price_effect, isoCode }
+      let isoToCountryName = {}; // isoCode -> country name
+      /*****************************************************
+       * 2) INITIALIZE MAP
+       *****************************************************/
+      const map = L.map("map", {
+        center: [20, 0], // roughly center on the globe
+        zoom : 14, 
+        maxBounds:[
+          [-90, -180],
+          [90, 180]
+        ],
+        maxBoundsViscosity: 0
+      }).setView([20, 0], 2); // roughly center on the globe
+      // Example dark tile layer
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        minZoom: 2,
+        attribution: '© <a href="https://carto.com/attributions">CARTO</a>'
       }).addTo(map);
 
-      // 3) Fetch a GeoJSON file of world countries
-      //    For a quick start, you can use one from GitHub or store your own in "world_countries.geojson".
+      /*****************************************************
+       * 3) LOAD GEOJSON & SET UP CLICK HANDLERS
+       *****************************************************/
       fetch("data/countries.geojson")
         .then((res) => res.json())
         .then((geojsonData) => {
+          // Optional: store a lowercased version of the country name
           geojsonData.features.forEach((feature) => {
             feature.properties.ADMIN_LOWER = feature.properties.ADMIN.toLowerCase();
           });
-          // 4) Create a Leaflet GeoJSON layer
+
           L.geoJSON(geojsonData, {
-            onEachFeature: function (feature, layer) {
-              // 5) Attach a click event to each country polygon
-              layer.on("click", () => {
-                const isoCode = feature.properties.ISO_A3;
-                const lowerCountryName = feature.properties.ADMIN_LOWER;
-                // Extract the country's name property from the GeoJSON
-                // Adjust the property if your GeoJSON uses a different field
-                const countryName = feature.properties.ADMIN;
-
-                // Prompt the user for a new tariff rate
-                const newTariffStr = prompt(`Enter new tariff for ${countryName}:`, "0.1");
-                if (newTariffStr === null) {
-                  // User clicked cancel
-                  return;
-                }
-
-                // Convert string to float
-                const newTariffValue = parseFloat(newTariffStr);
-                if (isNaN(newTariffValue)) {
-                  alert("Invalid tariff value.");
-                  return;
-                }
-
-                // 6) Construct the request body for your FastAPI endpoint
-                //    This assumes your endpoint expects:
-                //       { new_tariffs: { [countryName]: <float> }, pass_through: <float> }
-                const requestData = {
-                  new_tariffs: { [isoCode]: newTariffValue },
-                  pass_through: 1.0,
-                };
-
-                // 7) Send a POST request to your API endpoint
-                //    Adjust the URL if your FastAPI server is running on a different origin/port
-                fetch("/api/calculate_price_effects", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify(requestData),
-                })
-                  .then((response) => response.json())
-                  .then((data) => {
-                    // data should have a "results" array like [{ country: "...", price_effect: ... }, ...]
-                    console.log("Server response:", data);
-                    if (data.result && data.result.length) {
-                      const priceEffect = data.result[0].price_effect.toFixed(2);
-                      alert(
-                        `Price effect for ${isoCode}: ${priceEffect}%`
-                      );
-                    } else {
-                      alert("No price effect data returned.");
-                    }
-                  })
-                  .catch((err) => {
-                    console.error("API error:", err);
-                    alert("Error calling the API.");
-                  });
-              });
+            style: {
+              color: "#333",       // border color
+              weight: 1,           // border thickness
+              fillColor: "000",   // no interior color
+              fillOpacity: 0.005       // fully transparent fill
             },
+            onEachFeature: function (feature, layer) {
+              layer.on("click", (e) => handleCountryClick(feature, e));
+            }
           }).addTo(map);
         })
         .catch((err) => {
           console.error("Error loading GeoJSON:", err);
           alert("Could not load the country map data.");
         });
+
+      /*****************************************************
+       * 4) COUNTRY CLICK HANDLER
+       *****************************************************/
+      async function handleCountryClick(feature, e) {
+        const isoCode = feature.properties.ISO_A3;
+        const countryName = feature.properties.ADMIN; // display name
+        isoToCountryName[isoCode] = countryName;
+        try {
+          const infoRes = await fetch(`/api/country_info?iso=${isoCode}`);
+          if (!infoRes.ok) {
+            throw new Error(`Country info not found: ${isoCode}`);
+          }
+        const infoData = await infoRes.json();
+        const currentTariffPercent = (infoData.current_tariff * 100).toFixed(2);
+        const popupContent = `
+          <div style="min-width: 200px;">
+            <h4 style="margin:0 0 5px 0;">${countryName}</h4>
+            <div style="margin-bottom: 5px;">
+              <label>Current Tariff: 
+                <input 
+                  id="currentTariffInput" 
+                  type="number" 
+                  step="5" 
+                  min = "0"
+                  max = "100"
+                  value="${currentTariffPercent}" 
+                  style="width:80px;" 
+                /> <strong>%</strong>
+              </label>
+            </div>
+            <div style="margin-bottom: 5px;">
+              <label>New Tariff: 
+                <input 
+                  id="newTariffInput" 
+                  type="number" 
+                  step="5" 
+                  min = "0"
+                  max = "100"
+                  value="${currentTariffPercent}" 
+                  style="width:80px;" 
+                /> <strong>%</strong>
+              </label>
+            </div>
+            <div style="margin-bottom: 5px;">
+              <label>Pass-Through: 
+                <input 
+                  id="passThroughInput" 
+                  type="number" 
+                  step="0.1" 
+                  min = "0"
+                  max = "1"
+                  value="${infoData.default_pass_through}" 
+                  style="width:80px;"
+                />
+              </label>
+            </div>
+            <button id="tariffSubmit" style="margin-top:5px;">Submit</button>
+          </div>
+        `;
+            const popup = L.popup()
+          .setLatLng(e.latlng)
+          .setContent(popupContent)
+          .openOn(map);
+
+          // Wait for the popup DOM to render
+          setTimeout(() => {
+            const submitBtn = document.getElementById("tariffSubmit");
+            const newTariffEl = document.getElementById("newTariffInput");
+            const passThroughEl = document.getElementById("passThroughInput");
+            const currentTariffEl = document.getElementById("currentTariffInput");
+
+            // (Optional) auto-focus the input
+            newTariffEl.focus();
+
+            submitBtn.addEventListener("click", () => {
+              const currentTariffValue = parseFloat((currentTariffEl.value)/100)
+              const newTariffValue = parseFloat((newTariffEl.value)/100);
+              const passThroughValue = parseFloat(passThroughEl.value);
+              if (isNaN(newTariffValue)|| isNaN(passThroughValue)) {
+                alert("Invalid tariff value.");
+                return;
+              }
+              // Close the popup
+              map.closePopup();
+
+              // Construct the request payload
+              selectedTariffs[isoCode] = newTariffValue;
+              oldTariffs[isoCode] = currentTariffValue;
+              const requestData = {
+                new_tariffs: selectedTariffs,
+                old_tariffs: oldTariffs,
+                pass_through: passThroughValue
+              };
+
+              fetch("/api/calculate_price_effects", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestData),
+              })
+                .then((response) => response.json())
+                .then((data) => {
+                  console.log("Server response:", data);
+                  if (data.result && data.result.length) {
+                    // We'll store the updated list in priceEffects
+                    // data.result might be something like:
+                    // [ { "country": "USA", "price_effect": 2.5 }, ... ]
+                    priceEffects = data.result.map((item) => {  
+                      const iso = item.ISO_A3;
+                      return {
+                        isoCode: iso,
+                        countryName: isoToCountryName[iso], 
+                        price_effect: item.price_effect,
+                        D_tariffs: item.diff_tariffs.toFixed(2)
+                      };
+                    });
+                    // Now update the UI
+                    updateReceipt();
+                  } else {
+                    alert("No price effect data returned.");
+                  }
+                })
+                .catch((err) => {
+                  console.error("API error:", err);
+                  alert("Error calling the API.");
+                });
+            });
+          }, 0);
+        } catch (err) {
+          console.error(err);
+          alert("Error fetching country info.");
+        }
+      }
+
+      /*****************************************************
+       * 5) UPDATE THE RECEIPT UI
+       *****************************************************/
+      function updateReceipt() {
+        const receiptItemsDiv = document.getElementById("receipt-items");
+        const totalEffectSpan = document.getElementById("total-effect");
+
+        // Clear out previous items
+        receiptItemsDiv.innerHTML = "";
+
+        // Sum up all price_effects
+        let total = 0;
+
+        priceEffects.forEach((item) => {
+          total += item.price_effect;
+
+          // Build a line item div
+          const lineItemDiv = document.createElement("div");
+          lineItemDiv.className = "receipt-item";
+
+          lineItemDiv.innerHTML = `
+            <!-- First line: country + price effect side by side -->
+            <div>
+              <span>${item.countryName}</span>
+              <br>
+               <div style="margin-left: 10px; font-size: 0.65em; color: #999; margin-top: 4px;">
+              <span>Tariff Change: ${item.D_tariffs} %</span>
+              </div>
+            </div>
+            <div>
+                <span>${item.price_effect.toFixed(2)}%</span>
+            </div>
+            
+          `;
+          receiptItemsDiv.appendChild(lineItemDiv);
+        });
+
+        // Display total
+        totalEffectSpan.textContent = total.toFixed(2);
+      }
+
+      /*****************************************************
+       * 6) CLEAR HISTORY
+       *****************************************************/
+      const clearBtn = document.getElementById("clear-btn");
+      clearBtn.addEventListener("click", () => {
+        selectedTariffs = {};
+        priceEffects = [];
+        updateReceipt();
+      });
     </script>
   </body>
 </html>

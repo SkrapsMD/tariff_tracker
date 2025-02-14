@@ -14,7 +14,7 @@ import country_converter as coco
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 os.chdir(ROOT_DIR)
 sys.path.append(str(ROOT_DIR))
-def calculate_price_effects(data, new_tariffs, pass_through):
+def calculate_price_effects(data, new_tariffs, old_tariffs,pass_through):
     """
     Calculate the estimated price effects from tariff changes using country‐specific
     old tariffs given in the "tariff_rate" column.
@@ -47,10 +47,16 @@ def calculate_price_effects(data, new_tariffs, pass_through):
         lambda row: new_tariffs.get(row['ISO_A3'], row['tariff']),
         axis=1
     )
+    df['old_tariff']= df.apply(
+        lambda row: old_tariffs.get(row['ISO_A3'], row['tariff']),
+        axis = 1
+    )
+
+    df['diff_tariffs']= (df['new_tariff'] - df['old_tariff'])*100
     
     # Compute the logged tariff values. The old tariff is taken from the existing column.
-    df['ln_tariff_old'] = np.log(1 + df['tariff'])
-    df['ln_tariff_new'] = np.log(1 + df['tariff'] + df['new_tariff'])
+    df['ln_tariff_old'] = np.log(1 + df['old_tariff'])
+    df['ln_tariff_new'] = np.log(1 +  df['new_tariff'])
     
     # Calculate the change in the log tariff
     df['D_tariff'] = df['ln_tariff_new'] - df['ln_tariff_old']
@@ -66,4 +72,4 @@ def calculate_price_effects(data, new_tariffs, pass_through):
     result_df.rename(columns={'D_price': 'price_effect'}, inplace=True)
     
     # Return only the relevant columns
-    return result_df[['ISO_A3', 'price_effect']]
+    return result_df[['ISO_A3', 'price_effect', 'diff_tariffs']]
